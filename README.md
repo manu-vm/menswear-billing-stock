@@ -1,2 +1,20 @@
-# menswear-billing-stock
-A mobile-friendly, offline-capable menswear shop management web app with billing, GST calculation, stock management by size and colour, PDF bill generation, UPI QR code payments, sales history, and data backup. Built with HTML, CSS, and JavaScript for Android and iOS browsers.
+MENSWEAR BILLING & STOCK — OFFLINE VERSION
+
+Files:
+- index.html
+- manifest.webmanifest
+- service-worker.js
+
+Offline features:
+- App shell is cached after the first successful visit over HTTPS.
+- Product stock, saved bills, and settings are stored in this browser's localStorage.
+- Bills can be prepared and saved offline after the app has been opened online once.
+- PDF generation uses the browser print dialog; offline support depends on the browser's print/save-PDF capability.
+
+Important:
+- This version is OFFLINE-capable, but does NOT yet sync data to Firebase or another cloud.
+- Data is stored per browser/device. Clearing browser data may erase it.
+- Back up from Settings regularly.
+- For PWA offline caching, host on HTTPS (Firebase Hosting, Netlify, etc.) and open it once online. Then use Add to Home Screen.
+- If the app is used on multiple devices, their data will NOT sync until cloud sync is implemented.
+- Verify GST rates and legal invoice requirements before official use.
