@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17243b">
 <title>Menswear Billing & Stock</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{--navy:#17243b;--blue:#2855d9;--bg:#f3f5f9;--card:#fff;--ink:#172033;--muted:#657187;--line:#e0e5ed;--red:#b42318;--green:#147747}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -16,6 +17,9 @@ input,select,textarea{width:100%;min-width:0;border:1px solid #ccd4e1;border-rad
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#f7f9fc;border:1px solid var(--line);border-radius:11px;padding:12px}.stat span{display:block;color:var(--muted);font-size:11px}.stat strong{display:block;font-size:19px;margin-top:4px;overflow-wrap:anywhere}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px}.small{font-size:12px;color:var(--muted)}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:11px;color:var(--muted)}.empty{text-align:center;color:var(--muted);padding:22px 8px}.total{font-size:20px;font-weight:800}.tag{font-size:11px;padding:3px 6px;border-radius:6px;background:#e8f7ef;color:var(--green)}
 @media(max-width:420px){.stats{grid-template-columns:1fr 1fr}.stat:last-child{grid-column:span 2}header{padding-top:14px}nav{top:65px}}
+
+.qrbox{display:none;margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:12px;text-align:center;background:#fff}
+.qrbox.show{display:block}.qrimage{display:flex;justify-content:center;margin:12px auto}.qrimage img,.qrimage canvas{max-width:100%;height:auto}
 </style>
 <link rel="manifest" href="./manifest.webmanifest">
 <script>
@@ -48,7 +52,15 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 <div class="row" style="margin-top:7px"><span>Estimated GST</span><strong id="gstAmount">₹0.00</strong></div>
 <div class="row" style="margin-top:7px"><span>Discount</span><strong id="discountAmount">₹0.00</strong></div>
 <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><span class="total">Total</span><span class="total" id="total">₹0.00</span></div>
-<button class="primary full" style="margin-top:14px" onclick="saveBill()">Save bill & download PDF</button>
+<button class="secondary full" style="margin-top:14px" onclick="showUpiQr()">Show UPI payment QR</button>
+<div id="upiQrBox" class="qrbox">
+  <h2 style="margin-bottom:6px">Scan to pay via UPI</h2>
+  <div id="upiQrImage" class="qrimage"></div>
+  <div id="upiQrDetails" class="small"></div>
+  <p class="small">Check the payee name and amount in your UPI app before paying. This QR does not confirm payment.</p>
+  <button class="secondary" onclick="hideUpiQr()">Hide QR</button>
+</div>
+<button class="primary full" style="margin-top:10px" onclick="saveBill()">Save bill & download PDF</button>
 <p class="small">This is a basic billing tool, not GST portal software. Confirm applicable tax rates and invoice requirements before using bills as official tax invoices.</p>
 </div></section>
 
@@ -72,6 +84,8 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 <div class="field"><label>Address (optional)</label><textarea id="shopAddress" rows="2" placeholder="Shop address"></textarea></div>
 <div class="field"><label>Phone (optional)</label><input id="shopPhone" placeholder="Phone number"></div>
 <div class="field"><label>GSTIN (optional)</label><input id="shopGstin" placeholder="GSTIN"></div>
+<div class="field"><label>UPI ID / VPA (required for QR)</label><input id="upiId" placeholder="yourname@bank"></div>
+<div class="field"><label>UPI payee name</label><input id="upiName" placeholder="Shop name as shown in UPI app"></div>
 <button class="primary full" onclick="saveSettings()">Save settings</button>
 <div style="height:10px"></div><button class="secondary full" onclick="backup()">Download data backup (JSON)</button>
 <div style="height:8px"></div><label class="secondary full" style="display:block;text-align:center;padding:11px;border-radius:9px;cursor:pointer"><input type="file" accept=".json,application/json" style="display:none" onchange="restore(event)">Restore backup JSON</label>
@@ -81,11 +95,11 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 </main>
 <script>
 const KEY='menswear_webapp_v1';
-let db={products:[],bills:[],settings:{shopName:'Menswear Shop',address:'',phone:'',gstin:''}},cart=[];
+let db={products:[],bills:[],settings:{shopName:'Menswear Shop',address:'',phone:'',gstin:'',upiId:'',upiName:''}},cart=[];
 const $=id=>document.getElementById(id);
 const cash=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function load(){try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved)db={...db,...saved,settings:{...db.settings,...saved.settings}}}catch(e){}$('shopName').value=db.settings.shopName;$('shopAddress').value=db.settings.address;$('shopPhone').value=db.settings.phone;$('shopGstin').value=db.settings.gstin;renderAll()}
+function load(){try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved)db={...db,...saved,settings:{...db.settings,...saved.settings}}}catch(e){}$('shopName').value=db.settings.shopName;$('shopAddress').value=db.settings.address;$('shopPhone').value=db.settings.phone;$('shopGstin').value=db.settings.gstin;$('upiId').value=db.settings.upiId||'';$('upiName').value=db.settings.upiName||'';renderAll()}
 function persist(){localStorage.setItem(KEY,JSON.stringify(db));renderAll()}
 function go(id){document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));if(id==='bill')renderSelect();window.scrollTo(0,0)}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
@@ -107,23 +121,26 @@ $('discount').addEventListener('input',renderCart);
 function totals(){let subtotal=cart.reduce((a,c)=>a+c.qty*c.price,0),discount=Math.max(0,Number($('discount').value)||0),taxable=Math.max(0,subtotal-discount),rawGst=cart.reduce((a,c)=>a+c.qty*c.price*c.gst/100,0),gst=subtotal?rawGst*taxable/subtotal:0;return{subtotal,discount,gst,total:taxable+gst}}
 function renderCart(){if(!$('cartArea'))return;$('cartArea').innerHTML=cart.length?'<div class="tablewrap"><table><tr><th>Item</th><th>Qty</th><th>Amount</th><th></th></tr>'+cart.map(c=>{let p=db.products.find(x=>x.id===c.id);return `<tr><td>${esc(p?desc(p):'Item')}</td><td>${c.qty}</td><td>${cash(c.qty*c.price)}</td><td><button class="danger" onclick="removeCart('${c.id}')">×</button></td></tr>`}).join('')+'</table></div>':'<div class="empty">Bill is empty. Add an item above.</div>';let t=totals();$('subtotal').textContent=cash(t.subtotal);$('gstAmount').textContent=cash(t.gst);$('discountAmount').textContent=cash(t.discount);$('total').textContent=cash(t.total)}
 function removeCart(id){cart=cart.filter(c=>c.id!==id);renderCart()}
+function showUpiQr(){
+  const upi=(db.settings.upiId||$('upiId')?.value||'').trim();
+  const payee=(db.settings.upiName||$('upiName')?.value||db.settings.shopName||'Menswear Shop').trim();
+  if(!upi){alert('Settings-ൽ നിങ്ങളുടെ UPI ID നൽകുക. ഉദാ: shopname@okaxis');return}
+  if(!upi.includes('@')||/\s/.test(upi)){alert('UPI ID ശരിയാണോ പരിശോധിക്കുക.');return}
+  if(!cart.length){alert('ആദ്യം ബില്ലിലേക്ക് സാധനങ്ങൾ ചേർക്കുക.');return}
+  if(typeof QRCode==='undefined'){alert('QR generator load ആയിട്ടില്ല. ഇന്റർനെറ്റ് കണക്ഷൻ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.');return}
+  const t=totals();
+  const note='Menswear bill';
+  const uri='upi://pay?pa='+encodeURIComponent(upi)+'&pn='+encodeURIComponent(payee)+'&am='+encodeURIComponent(t.total.toFixed(2))+'&cu=INR&tn='+encodeURIComponent(note);
+  $('upiQrImage').innerHTML='';
+  new QRCode($('upiQrImage'),{text:uri,width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  $('upiQrDetails').innerHTML='<b>'+esc(payee)+'</b><br>'+esc(upi)+'<br>Amount: <b>'+cash(t.total)+'</b>';
+  $('upiQrBox').classList.add('show');
+}
+function hideUpiQr(){$('upiQrBox').classList.remove('show')}
 function saveBill(){if(!cart.length){alert('Add an item first.');return}let t=totals();if(t.discount>t.subtotal){alert('Discount cannot exceed subtotal.');return}
 for(let c of cart){let p=db.products.find(x=>x.id===c.id);if(!p||p.qty<c.qty){alert('Stock changed. Check the bill again.');return}}
 let items=cart.map(c=>{let p=db.products.find(x=>x.id===c.id);return{name:desc(p),sku:p.sku,qty:c.qty,price:c.price,gst:c.gst,line:c.qty*c.price}});
 items.forEach(c=>{let p=db.products.find(x=>x.id===cart.find(y=>{let pp=db.products.find(z=>z.id===y.id);return pp&&desc(pp)===c.name}).id);if(p)p.qty-=c.qty});
 let bill={id:'INV-'+Date.now().toString().slice(-8),date:new Date().toISOString(),customer:$('customer').value.trim(),payment:$('payment').value,items,subtotal:t.subtotal,discount:t.discount,gst:t.gst,total:t.total,shop:{...db.settings}};
 db.bills.unshift(bill);cart=[];$('customer').value='';$('discount').value='0';persist();downloadBill(bill);go('history')}
-function downloadBill(b){let rows=b.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${cash(i.price)}</td><td>${cash(i.line)}</td></tr>`).join('');let date=new Date(b.date).toLocaleString('en-IN');let w=window.open('','_blank');if(!w){alert('Allow pop-ups to download/print the PDF bill. You can also open a saved bill and choose Download PDF.');return}w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(b.id)}</title><style>body{font:14px Arial;color:#111;padding:25px}h1{font-size:22px}p{margin:5px 0}.muted{color:#555;font-size:12px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border-bottom:1px solid #ddd;padding:9px;text-align:left}th{background:#f2f2f2}.right{text-align:right}.total{font-size:20px;font-weight:bold}.actions{margin-bottom:20px}@media print{.actions{display:none}body{padding:0}}</style></head><body><div class="actions"><button onclick="window.print()">Download / Save as PDF</button> <button onclick="window.close()">Close</button><p class="muted">Choose “Save as PDF” in the print dialog.</p></div><h1>${esc(b.shop.shopName||'Menswear Shop')}</h1><p>${esc(b.shop.address||'')}</p><p>${b.shop.phone?'Phone: '+esc(b.shop.phone):''}</p><p>${b.shop.gstin?'GSTIN: '+esc(b.shop.gstin):''}</p><hr><h2>Bill ${esc(b.id)}</h2><p>Date: ${esc(date)}</p><p>Customer: ${esc(b.customer||'Walk-in customer')}</p><p>Payment: ${esc(b.payment)}</p><table><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr>${rows}</table><p class="right">Subtotal: ${cash(b.subtotal)}</p><p class="right">Discount: ${cash(b.discount)}</p><p class="right">Estimated GST: ${cash(b.gst)}</p><p class="right total">Total: ${cash(b.total)}</p><p class="muted">Tax invoice status and GST treatment must be verified for your business. This bill was generated by a basic local app.</p><p style="margin-top:35px">Thank you for shopping with us!</p></body></html>`);w.document.close()}
-function renderBills(){$('billHistory').innerHTML=db.bills.length?'<table><tr><th>Bill / Date</th><th>Customer</th><th>Total</th><th>Action</th></tr>'+db.bills.map(b=>`<tr><td><b>${esc(b.id)}</b><br><span class="small">${esc(new Date(b.date).toLocaleString('en-IN'))}</span></td><td>${esc(b.customer||'Walk-in')}</td><td>${cash(b.total)}</td><td><button class="primary" onclick="reprint('${b.id}')">PDF</button></td></tr>`).join('')+'</table>':'<div class="empty">No saved bills yet.</div>'}
-function reprint(id){let b=db.bills.find(x=>x.id===id);if(b)downloadBill(b)}
-function saveSettings(){db.settings={shopName:$('shopName').value.trim()||'Menswear Shop',address:$('shopAddress').value.trim(),phone:$('shopPhone').value.trim(),gstin:$('shopGstin').value.trim()};persist();alert('Settings saved.')}
-function dl(name,content,type){let blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function csvStock(){let rows=[['Name','Category','Brand','Size','Colour','SKU','Cost','Price','Quantity','GST'],...db.products.map(p=>[p.name,p.category,p.brand,p.size,p.colour,p.sku,p.cost,p.price,p.qty,p.gst])];dl('menswear-stock.csv',rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n'),'text/csv')}
-function csvBills(){let rows=[['Bill ID','Date','Customer','Payment','Subtotal','Discount','GST','Total'],...db.bills.map(b=>[b.id,b.date,b.customer,b.payment,b.subtotal,b.discount,b.gst,b.total])];dl('menswear-bills.csv',rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n'),'text/csv')}
-function backup(){dl('menswear-backup.json',JSON.stringify(db,null,2),'application/json')}
-function restore(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!Array.isArray(x.products)||!Array.isArray(x.bills))throw 0;if(confirm('Replace current stock and bills with this backup?')){db=x;db.settings={shopName:'Menswear Shop',address:'',phone:'',gstin:'',...(x.settings||{})};persist();load();alert('Backup restored.')}}catch(err){alert('Invalid backup file.')}};r.readAsText(f);e.target.value=''}
-function wipe(){if(confirm('Permanently delete all products and bills on this device? Download a backup first.')){localStorage.removeItem(KEY);db={products:[],bills:[],settings:{shopName:'Menswear Shop',address:'',phone:'',gstin:''}};cart=[];load()}}
-load();
-</script>
-</body>
-</html>
+function downloadBill(b){let rows=b.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${cash(i.price)}</td><td>${cash(i.line)}</td></tr>`).join('');let date=new Date(b.date).toLocaleString('en-IN');let w=window.open('','_blank');if(!w){alert('Allow pop-ups to download/print the PDF bill. You can also open a saved bill and choose Download PDF.');return}w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(b.id)}</title><style>body{font:14px Arial;color:#111;padding:25px}h1{font-size:22px}p{margin:5px 0}.muted{color:#555;font-size:12px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border-bottom:1px solid #ddd;padding:9px;text-
